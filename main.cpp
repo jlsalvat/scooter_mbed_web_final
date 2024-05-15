@@ -1,106 +1,85 @@
-#include "mbed.h"
 #include "EthernetInterface.h"
-#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-
-#define PORT   80
-
-EthernetInterface eth;
-
-TCPSocketServer svr;
-bool serverIsListened = false;
-
-TCPSocketConnection client;
-bool clientIsConnected = false;
-
-DigitalOut led1(LED1); //server listning status
-DigitalOut led2(LED2); //socket connecting status
-
-Ticker ledTick;
+#include "mbed.h"
+#include "rtos.h" // need for main thread sleep
+#include "html.h" // need for html patch working with web server
 
 
-int giCpt=0;                // compteur html
-// page html
-char html_page[]="<html> " "<head> <title>titre de la page html</title> </head>"
-                    "<body>" "CGI : Compteur <br>" "cpt=%d <br>" "</body></html>";
+/************ persistent file parameters section *****************/
+LocalFileSystem local("local");               // Create the local filesystem under the name "local"
 
-void ledTickfunc()
+
+Serial pc(USBTX, USBRX); // tx, rx
+
+
+
+
+/********************* web server section **********************************/
+var_field_t tab_balise[10];  //une balise est présente dans le squelette
+
+
+void CGI_Function(void)   // cgi function that patch web data to empty web page
 {
-    if(serverIsListened)  {
-        led1 = !led1;
-    } else {
-        led1 = false;
-    }
+
+    static int counter;
+    static float dixieme;
+
+    char ma_chaine4[20]= {}; // needed to form html response
+    sprintf (ma_chaine4,"%d",counter);// convert speed as ascii string
+    Html_Patch (tab_balise,0,ma_chaine4);
+    counter++;
+
+    sprintf (ma_chaine4,"%.2f",dixieme);// convert speed as ascii string
+    Html_Patch (tab_balise,1,ma_chaine4);
+    dixieme+=0.1;
+
 }
 
-int main (void)
+
+
+//*************************** main function *****************************************
+int main()
 {
-    ledTick.attach(&ledTickfunc,0.5);
+    char cChoix;
+//***************************************** web section ********************************************/
+    Init_Web_Server(&CGI_Function); // create and initialize tcp server socket and pass function pointer to local CGI function
+    Thread WebThread(Web_Server_Thread);// create and launch web server thread
+    /********* main cgi function used to patch data to the web server thread **********************************/
+    Gen_HtmlCode_From_File("/local/pagecgi.htm",tab_balise,2);// read and localise ^VARDEF[X] tag in empty html file
+//******************************************* end web section  ************************************* /
 
-    //setup ethernet interface
-    eth.init(); //Use DHCP
-    eth.connect();
-    printf("IP Address is %s\n\r", eth.getIPAddress());
+    while(cChoix!='q' and cChoix!='Q') {
+        pc.printf(" veuillez saisir un choix parmi la liste proposee: \n\r");
+        pc.printf(" a:Mode Manuel\n\r");
+        pc.printf(" b:Mode Auto \n\r");
+        pc.printf(" c:Calibration \n\r");
+        pc.printf(" q:Quitter \n\r");
 
-    //setup tcp socket
-    if(svr.bind(PORT)< 0) {
-        printf("tcp server bind failed.\n\r");
-        return -1;
-    } else {
-        printf("tcp server bind successed.\n\r");
-        serverIsListened = true;
-    }
-
-    if(svr.listen(1) < 0) {
-        printf("tcp server listen failed.\n\r");
-        return -1;
-    } else {
-        printf("tcp server is listening...\n\r");
-    }
-
-    //listening for http GET request
-    while (serverIsListened) {
-        //blocking mode(never timeout)
-        if(svr.accept(client)<0) {
-            printf("failed to accept connection.\n\r");
-        } else {
-            printf("connection success!\n\rIP: %s\n\r",client.get_address());
-            clientIsConnected = true;
-            led2 = true;
-            
-            while(clientIsConnected) {
-                char buffer[1024] = {};
-                switch(client.receive(buffer, 1023)) {
-                    case 0:
-                        printf("recieved buffer is empty.\n\r");
-                        clientIsConnected = false;
-                        break;
-                    case -1:
-                        printf("failed to read data from client.\n\r");
-                        clientIsConnected = false;
-                        break;
-                    default:
-                        printf("Recieved Data: %d\n\r\n\r%.*s\n\r",strlen(buffer),strlen(buffer),buffer);
-                        if(buffer[0] == 'G' && buffer[1] == 'E' && buffer[2] == 'T' ) {
-                            char sendHeader[256] = {};
-                            char sendBody[1024];
-                            sprintf(sendHeader,"HTTP/1.1 200 OK\n\rContent-Length: %d\n\rContent-Type: text\n\rConnection: Close\n\r",strlen(html_page));
-                            client.send(sendHeader,strlen(sendHeader));
-                            sprintf(sendBody,html_page,giCpt);
-                            client.send(sendBody,strlen(sendBody));
-                            #ifdef _HTTP_DEBUG
-                             printf("%s",sendHeader);// debut http header sent
-                             printf("%s",sendBody);// debut http body
-                            #endif                          
-                            //client.send(buffer,strlen(buffer));// realise echo request to client 
-                            clientIsConnected = false;
-                        }
-                        break;
-                }
-            }
-            printf("close connection.\n\rtcp server is listening...\n\r");
-            client.close();
-            led2 = false;
+        /************* multithreading : main thread need to sleep in order to allow web response */
+        while (pc.readable()==0) { // determine if char available
+            Thread::wait(10);   // wait 10 until char available on serial input
         }
-    }
-}
+        /************* end of main thread sleep  ****************/
+
+        pc.scanf(" %c",&cChoix);
+        switch (cChoix) {
+            case 'a':
+
+                break;
+
+            case 'b':
+
+                break;
+
+            case 'c':
+
+                break;
+        }
+    } // end while
+
+    //************** thread deinit *********************
+    DeInit_Web_Server();
+
+    pc.printf(" fin programme scooter mbed \n\r");
+} // end main
