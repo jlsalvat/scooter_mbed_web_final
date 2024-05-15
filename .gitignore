@@ -5,6 +5,5 @@ compile_commands?json
 ?cache
 EthernetInterface
 bloc_io
-html
 mbed-rtos
 mbed
